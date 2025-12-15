@@ -1,92 +1,68 @@
 :root {
     --primary: #2c3e50;
-    --accent: #3498db;
+    --accent: #2980b9;
     --success: #27ae60;
     --danger: #c0392b;
-    --bg: #f4f4f9;
-    --card-bg: #ffffff;
+    --bg: #eceff1;
 }
 
-body {
-    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    background-color: var(--bg);
-    color: #333;
-    margin: 0;
-    padding: 20px;
-}
+body { font-family: 'Arial', sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #333; }
+.container { max-width: 800px; margin: 0 auto; }
 
-.container {
-    max-width: 900px;
+/* Controles (Tela) */
+.card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+h1 { font-size: 1.5rem; color: var(--primary); margin-top: 0; }
+.btn { padding: 10px 20px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; transition: 0.2s; }
+.btn-primary { background: var(--accent); }
+.btn-success { background: var(--success); }
+.btn-danger { background: var(--danger); }
+.full-width { width: 100%; margin-top: 10px; }
+.input-field { width: 48%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+.form-row { display: flex; justify-content: space-between; gap: 10px; }
+.file-list { list-style: none; padding: 0; max-height: 100px; overflow-y: auto; border: 1px solid #eee; }
+.file-list li.ok { color: var(--success); font-size: 0.85em; padding: 4px; border-bottom: 1px solid #f0f0f0; }
+
+/* --- ESTILO DO DOCUMENTO OFICIAL --- */
+.folha-oficial {
+    background: white;
+    width: 210mm; /* A4 */
+    min-height: 297mm;
     margin: 0 auto;
+    padding: 10mm;
+    box-sizing: border-box;
+    border: 1px solid #ddd;
+    font-family: 'Arial', sans-serif;
+    font-size: 11px;
+    color: #000;
 }
 
-header {
-    text-align: center;
-    margin-bottom: 30px;
-}
+.header-oficial { display: flex; border: 1px solid #000; padding: 5px; margin-bottom: 5px; }
+.brasao { width: 60px; display: flex; align-items: center; justify-content: center; }
+.titulo-header { flex: 1; text-align: center; border-right: 1px solid #000; padding: 0 10px; }
+.titulo-header h3, .titulo-header h4 { margin: 2px 0; font-size: 10px; font-weight: bold; }
+.titulo-lateral { width: 30%; text-align: center; display: flex; align-items: center; font-weight: bold; font-size: 10px; padding: 5px; }
 
-h1 { color: var(--primary); margin-bottom: 5px; }
-p { color: #666; }
+.aviso-legal { font-size: 9px; margin: 5px 0 10px 0; text-align: justify; }
 
-.card {
-    background: var(--card-bg);
-    padding: 25px;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    margin-bottom: 20px;
-}
+.bloco { border: 1px solid #000; margin-bottom: 10px; }
+.titulo-bloco { background: #ddd; font-weight: bold; padding: 3px 5px; border-bottom: 1px solid #000; font-size: 10px; }
+.linha-dados { display: flex; padding: 0; }
+.col-30 { width: 30%; border-right: 1px solid #000; padding: 3px 5px; }
+.col-70 { width: 70%; padding: 3px 5px; }
+label { display: block; font-size: 8px; font-weight: bold; color: #555; margin-bottom: 2px; }
+span { font-weight: bold; font-size: 11px; text-transform: uppercase; }
 
-.btn {
-    padding: 10px 20px;
-    border: none;
-    border-radius: 5px;
-    font-size: 15px;
-    cursor: pointer;
-    transition: background 0.2s;
-    font-weight: 600;
-}
+.tabela-oficial { width: 100%; border-collapse: collapse; }
+.tabela-oficial td { border-bottom: 1px solid #000; padding: 4px 5px; font-size: 10px; }
+.tabela-oficial tr:last-child td { border-bottom: none; }
+.tabela-oficial .valor { text-align: right; width: 120px; font-weight: bold; border-left: 1px solid #000; }
 
-.btn-primary { background: var(--accent); color: white; }
-.btn-primary:hover { background: #2980b9; }
+.footer-oficial { display: flex; justify-content: space-between; margin-top: 40px; }
+.assinatura { border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px; font-size: 10px; }
 
-.btn-success { background: var(--success); color: white; }
-.btn-success:hover { background: #2ecc71; }
-
-.btn-danger { background: var(--danger); color: white; }
-.btn-secondary { background: #95a5a6; color: white; margin-top: 15px; }
-
-.full-width { width: 100%; margin-top: 15px; }
-
-#fileInput { display: none; }
-
-.file-list {
-    list-style: none;
-    padding: 0;
-    max-height: 150px;
-    overflow-y: auto;
-    border: 1px solid #eee;
-    margin-top: 10px;
-}
-
-.file-list li {
-    padding: 8px;
-    border-bottom: 1px solid #eee;
-    font-size: 0.9em;
-    display: flex;
-    justify-content: space-between;
-}
-
-.file-list li.ok { color: var(--success); }
-.file-list li.error { color: var(--danger); }
-
-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-th, td { padding: 12px; border-bottom: 1px solid #ddd; }
-th { background-color: #f8f9fa; color: var(--primary); text-align: left; }
-.text-right { text-align: right; }
-.total-row { background-color: #e8f6f3; font-weight: bold; font-size: 1.1em; }
-
+/* IMPRESSÃO */
 @media print {
-    .upload-section, .btn, #statusArea { display: none; }
-    body { background: white; }
-    .card { box-shadow: none; border: none; }
+    .no-print { display: none !important; }
+    body { background: white; padding: 0; margin: 0; }
+    .folha-oficial { border: none; margin: 0; width: 100%; }
 }
