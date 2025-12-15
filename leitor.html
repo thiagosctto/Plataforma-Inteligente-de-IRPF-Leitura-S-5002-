@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Plataforma Inteligente de IRPF (Leitura S-5002)</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 800px; margin: 30px auto; background: #f4f4f9; padding: 20px; }
+        .card { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
+        .btn { background: #3498db; color: white; padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 20px 0; }
+        .btn:hover { background: #2980b9; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background-color: #f8f9fa; font-weight: 600; color: #555; }
+        .destaque { color: #27ae60; font-weight: bold; }
+        .total-row { background-color: #e8f6f3; font-weight: bold; }
+        #output { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>Processador de XML eSocial (S-5002)</h1>
+        <p>Selecione todos os arquivos XML (Janeiro a Dezembro) do funcionário.</p>
+        
+        <input type="file" id="fileInput" multiple accept=".xml" style="display:none">
+        <button class="btn" onclick="document.getElementById('fileInput').click()">📂 Selecionar Arquivos XML</button>
+        
+        <div id="loading" style="display:none; color: #666;">Processando arquivos...</div>
+    </div>
+
+    <div id="output" class="card" style="margin-top: 20px;">
+        <h2>Resumo Anual Consolidado (Regime de Caixa)</h2>
+        <p>CPF: <span id="cpfDisplay" class="destaque">---</span></p>
+        
+        <table id="tabelaResultados">
+            <thead>
+                <tr>
+                    <th>Competência (Caixa)</th>
+                    <th>Base de Cálculo</th>
+                    <th>IRRF Retido</th>
+                </tr>
+            </thead>
+            <tbody>
+                </tbody>
+            <tfoot>
+                <tr class="total-row">
+                    <td>TOTAL ANUAL</td>
+                    <td id="totalBase">R$ 0,00</td>
+                    <td id="totalIRRF">R$ 0,00</td>
+                </tr>
+            </tfoot>
+        </table>
+        
+        <button class="btn" style="background-color: #27ae60;" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+    </div>
+
+    <script>
+        document.getElementById('fileInput').addEventListener('change', processarArquivos);
+
+        async function processarArquivos(event) {
+            const files = event.target.files;
+            if (files.length === 0) return;
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('output').style.display = 'none';
+
+            let dadosConsolidados = {}; 
+            let cpfIdentificado = "";
+
+            const parser = new DOMParser();
+
+            // Iterar sobre cada arquivo selecionado
+            for (let file of files) {
+                const text = await file.text();
+                const xmlDoc = parser.parseFromString(text, "text/xml");
+
+                // Namespace resolver (truque para ignorar os prefixos 'esocial:')
+                const nsResolver = xmlDoc.createNSResolver(xmlDoc.ownerDocument == null ? xmlDoc.documentElement : xmlDoc.ownerDocument.documentElement);
+                const busca = (path, node) => xmlDoc.evaluate(path, node, nsResolver, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+
+                // Tenta pegar o CPF (seguro contra falhas)
+                try {
+                    // XPath genérico ignorando namespace (local-name) para funcionar em qualquer versão
+                    let cpfNode = xmlDoc.evaluate("//*[local-name()='cpfBenef']", xmlDoc, null, XPathResult.STRING_TYPE, null);
+                    if(cpfNode.stringValue) cpfIdentificado = cpfNode.stringValue;
+
+                    // Busca todos os blocos infoIR (Informações de IR)
+                    let infoIRNodes = xmlDoc.evaluate("//*[local-name()='infoIR']", xmlDoc, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+                    for (let i = 0; i < infoIRNodes.snapshotLength; i++) {
+                        let nodeIR = infoIRNodes.snapshotItem(i);
+                        
+                        // Busca a competência (Período de Apuração) dentro deste bloco
+                        let perApur = xmlDoc.evaluate(".//*[local-name()='perApur']", nodeIR, null, XPathResult.STRING_TYPE, null).stringValue;
+                        
+                        // Busca bases de cálculo dentro deste infoIR
+                        let basesNodes = xmlDoc.evaluate(".//*[local-name()='basesApur']", nodeIR, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+                        for (let j = 0; j < basesNodes.snapshotLength; j++) {
+                            let baseNode = basesNodes.snapshotItem(j);
+                            
+                            let vrBc = parseFloat(xmlDoc.evaluate(".//*[local-name()='vrBcMensal']", baseNode, null, XPathResult.STRING_TYPE, null).stringValue);
+                            let vrIrrf = parseFloat(xmlDoc.evaluate(".//*[local-name()='vrIrrfDesc']", baseNode, null, XPathResult.STRING_TYPE, null).stringValue);
+
+                            // Inicializa o objeto se não existir
+                            if (!dadosConsolidados[perApur]) {
+                                dadosConsolidados[perApur] = { base: 0, irrf: 0 };
+                            }
+
+                            // SOMA SEGURA (Multiplica por 100 para virar centavos inteiros)
+                            dadosConsolidados[perApur].base += Math.round(vrBc * 100);
+                            dadosConsolidados[perApur].irrf += Math.round(vrIrrf * 100);
+                        }
+                    }
+
+                } catch (e) {
+                    console.error("Erro ao ler XML: " + file.name, e);
+                }
+            }
+
+            renderizarTabela(dadosConsolidados, cpfIdentificado);
+        }
+
+        function renderizarTabela(dados, cpf) {
+            const tbody = document.querySelector("#tabelaResultados tbody");
+            tbody.innerHTML = "";
+            
+            document.getElementById("cpfDisplay").textContent = cpf || "Não identificado";
+
+            // Ordenar as competências (datas)
+            const chavesOrdenadas = Object.keys(dados).sort();
+            
+            let totalBase = 0;
+            let totalIrrf = 0;
+
+            chavesOrdenadas.forEach(comp => {
+                let base = dados[comp].base;
+                let irrf = dados[comp].irrf;
+
+                totalBase += base;
+                totalIrrf += irrf;
+
+                let row = `<tr>
+                    <td>${comp}</td>
+                    <td>${formatarMoeda(base)}</td>
+                    <td>${formatarMoeda(irrf)}</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+
+            // Atualiza totais
+            document.getElementById("totalBase").textContent = formatarMoeda(totalBase);
+            document.getElementById("totalIRRF").textContent = formatarMoeda(totalIrrf);
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('output').style.display = 'block';
+        }
+
+        // Formata centavos inteiros para Real (R$)
+        function formatarMoeda(valorEmCentavos) {
+            return (valorEmCentavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+    </script>
+</body>
+</html>
