@@ -1,5 +1,5 @@
-// === ESTADO GLOBAL (A "Memória" da Aplicação) ===
-let memoriaArquivos = []; // Aqui ficam os dados processados de cada arquivo
+// === ESTADO GLOBAL ===
+let memoriaArquivos = []; 
 
 // Listeners
 document.getElementById('fileInput').addEventListener('change', receberArquivos);
@@ -12,11 +12,9 @@ async function receberArquivos(event) {
     const statusArea = document.getElementById('statusArea');
     statusArea.style.display = 'block';
 
-    // Processa cada arquivo individualmente
     for (let file of files) {
-        // Evita duplicidade (se o arquivo já foi carregado pelo nome)
+        // Evita duplicidade
         if (memoriaArquivos.some(f => f.nomeArquivo === file.name)) {
-            console.warn(`Arquivo ${file.name} já foi carregado. Ignorando.`);
             continue;
         }
 
@@ -24,7 +22,11 @@ async function receberArquivos(event) {
             const conteudo = await lerArquivoTexto(file);
             const dadosExtraidos = processarXML(conteudo);
             
-            // Adiciona à memória global com metadados do arquivo
+            // Validação: Se o XML não tiver dados de IR, avisa
+            if (dadosExtraidos.length === 0) {
+                throw new Error("Arquivo lido, mas sem dados de S-5002 (IRRF). Verifique se é o XML correto.");
+            }
+
             memoriaArquivos.push({
                 nomeArquivo: file.name,
                 dados: dadosExtraidos
@@ -33,17 +35,17 @@ async function receberArquivos(event) {
             adicionarNaListaVisual(file.name, true);
 
         } catch (erro) {
-            console.error(erro);
-            adicionarNaListaVisual(file.name, false);
+            console.error("Erro no arquivo " + file.name, erro);
+            // Mostra o motivo do erro na tela para ajudar você
+            adicionarNaListaVisual(file.name, false, erro.message);
         }
     }
 
     atualizarContador();
-    // Limpa o input para permitir selecionar os mesmos arquivos novamente se necessário (após limpar)
     event.target.value = ''; 
 }
 
-// 2. Auxiliar para ler arquivo como texto (Promessa)
+// 2. Auxiliar para ler arquivo como texto
 function lerArquivoTexto(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -53,40 +55,42 @@ function lerArquivoTexto(file) {
     });
 }
 
-// 3. O "Cérebro": Lê o XML S-5002
+// 3. O "Cérebro" Atualizado (Mais robusto contra namespaces do eSocial)
 function processarXML(xmlTexto) {
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlTexto, "text/xml");
+
+    // Verifica erros de parsing do navegador
+    if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
+        throw new Error("O arquivo não é um XML válido ou está corrompido.");
+    }
     
-    // Namespaces do eSocial são chatos. Usamos local-name() no XPath para ignorá-los.
-    // Isso garante compatibilidade com qualquer versão do layout.
+    // --- Nova Estratégia de Leitura (Ignora prefixos como 'esocial:') ---
     
     // Tenta pegar o CPF
     let cpf = "";
-    const cpfNode = buscarNoXML(xmlDoc, "//*[local-name()='cpfBenef']");
-    if (cpfNode) cpf = cpfNode.textContent;
+    const tagsCPF = encontrarTagsPorNome(xmlDoc, "cpfBenef");
+    if (tagsCPF.length > 0) cpf = tagsCPF[0].textContent;
 
     let registros = [];
 
-    // Busca blocos de Informação de IR (infoIR)
-    const infoIRNodes = buscarTodosNoXML(xmlDoc, "//*[local-name()='infoIR']");
+    // Busca blocos 'infoIR' onde quer que estejam
+    const infoIRNodes = encontrarTagsPorNome(xmlDoc, "infoIR");
     
     infoIRNodes.forEach(nodeIR => {
-        // Data de Apuração (Regime de Caixa) - Formato AAAA-MM
-        const perApurNode = buscarNoXML(nodeIR, ".//*[local-name()='perApur']");
-        const perApur = perApurNode ? perApurNode.textContent : "Indefinido";
+        // Busca Competência (perApur) DENTRO do bloco infoIR
+        const tagsPerApur = encontrarTagsPorNome(nodeIR, "perApur");
+        const perApur = tagsPerApur.length > 0 ? tagsPerApur[0].textContent : "Indefinido";
 
-        // Bases de Cálculo dentro deste período
-        const basesNodes = buscarTodosNoXML(nodeIR, ".//*[local-name()='basesApur']");
+        // Busca as bases de cálculo DENTRO deste infoIR
+        const basesNodes = encontrarTagsPorNome(nodeIR, "basesApur");
         
         basesNodes.forEach(baseNode => {
-            const vrBcNode = buscarNoXML(baseNode, ".//*[local-name()='vrBcMensal']");
-            const vrIrrfNode = buscarNoXML(baseNode, ".//*[local-name()='vrIrrfDesc']");
+            const tagsVrBc = encontrarTagsPorNome(baseNode, "vrBcMensal");
+            const tagsVrIrrf = encontrarTagsPorNome(baseNode, "vrIrrfDesc");
 
-            // Convertendo para Float (Cuidado: JS puro tem problemas com centavos,
-            // mas para visualização simples funciona. Idealmente usaríamos inteiros.)
-            const vrBc = vrBcNode ? parseFloat(vrBcNode.textContent) : 0;
-            const vrIrrf = vrIrrfNode ? parseFloat(vrIrrfNode.textContent) : 0;
+            const vrBc = tagsVrBc.length > 0 ? parseFloat(tagsVrBc[0].textContent) : 0;
+            const vrIrrf = tagsVrIrrf.length > 0 ? parseFloat(tagsVrIrrf[0].textContent) : 0;
 
             registros.push({
                 competencia: perApur,
@@ -100,28 +104,45 @@ function processarXML(xmlTexto) {
     return registros;
 }
 
-// 4. Função para Consolidar e Exibir (A "Matemática")
+// --- Nova Função Auxiliar Poderosa ---
+// Encontra tags apenas pelo nome final, ignorando namespaces (esocial:, ns2:, etc)
+function encontrarTagsPorNome(elementoPai, nomeTagDesejada) {
+    // Se o elementoPai for o documento todo, usa getElementsByTagName("*")
+    // Se for um nó específico, também usa getElementsByTagName("*") nele
+    const todosElementos = elementoPai.getElementsByTagName("*");
+    const encontrados = [];
+
+    for (let i = 0; i < todosElementos.length; i++) {
+        const el = todosElementos[i];
+        // Verifica se o 'localName' (nome sem prefixo) bate com o que queremos
+        if (el.localName === nomeTagDesejada || el.tagName === nomeTagDesejada) {
+            encontrados.push(el);
+        }
+    }
+    return encontrados;
+}
+
+// 4. Função para Consolidar e Exibir
 function calcularTudo() {
     if (memoriaArquivos.length === 0) {
-        alert("Nenhum arquivo carregado na memória.");
+        alert("Nenhum arquivo carregado corretamente.");
         return;
     }
 
-    const consolidado = {}; // Objeto para somar por competência
+    const consolidado = {};
     let cpfFinal = "---";
 
-    // Varrer toda a memória
     memoriaArquivos.forEach(arquivo => {
         arquivo.dados.forEach(registro => {
             if (registro.cpf) cpfFinal = registro.cpf;
             
-            const chave = registro.competencia;
+            const chave = registro.competencia; // Ex: 2025-10
             
             if (!consolidado[chave]) {
                 consolidado[chave] = { base: 0, irrf: 0 };
             }
 
-            // Truque para precisão: Multiplica por 100, soma inteiros, depois divide
+            // Soma segura usando inteiros (evita erros de centavos do JS)
             consolidado[chave].base += Math.round(registro.base * 100);
             consolidado[chave].irrf += Math.round(registro.irrf * 100);
         });
@@ -161,25 +182,16 @@ function renderizarTabela(dados, cpf) {
     document.getElementById("output").style.display = "block";
 }
 
-// --- Funções Utilitárias e de Interface ---
+// --- Utilitários ---
 
-function buscarNoXML(contexto, xpath) {
-    const result = document.evaluate(xpath, contexto, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-    return result.singleNodeValue;
-}
-
-function buscarTodosNoXML(contexto, xpath) {
-    const result = document.evaluate(xpath, contexto, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-    let nodes = [];
-    for (let i = 0; i < result.snapshotLength; i++) nodes.push(result.snapshotItem(i));
-    return nodes;
-}
-
-function adicionarNaListaVisual(nome, sucesso) {
+function adicionarNaListaVisual(nome, sucesso, msgErro = "") {
     const lista = document.getElementById("listaArquivos");
     const li = document.createElement("li");
     li.className = sucesso ? "ok" : "error";
-    li.innerHTML = `<span>${nome}</span> <span>${sucesso ? '✔ Carregado' : '❌ Erro'}</span>`;
+    
+    const textoStatus = sucesso ? '✔ Carregado' : `❌ Erro: ${msgErro}`;
+    
+    li.innerHTML = `<span>${nome}</span> <span>${textoStatus}</span>`;
     lista.appendChild(li);
 }
 
@@ -200,5 +212,6 @@ function formatarMoeda(valorCentavos) {
 }
 
 function formatarCPF(cpf) {
+    if(!cpf || cpf.length < 11) return cpf;
     return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 }
