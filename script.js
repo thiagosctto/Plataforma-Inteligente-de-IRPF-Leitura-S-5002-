@@ -4,7 +4,7 @@ let memoriaArquivos = [];
 // Listeners
 document.getElementById('fileInput').addEventListener('change', receberArquivos);
 
-// 1. Função que recebe os arquivos do input
+// 1. Função que recebe os arquivos
 async function receberArquivos(event) {
     const files = event.target.files;
     if (files.length === 0) return;
@@ -13,30 +13,25 @@ async function receberArquivos(event) {
     statusArea.style.display = 'block';
 
     for (let file of files) {
-        // Evita duplicidade
-        if (memoriaArquivos.some(f => f.nomeArquivo === file.name)) {
-            continue;
-        }
+        // Evita duplicidade de nome
+        if (memoriaArquivos.some(f => f.nomeArquivo === file.name)) continue;
 
         try {
             const conteudo = await lerArquivoTexto(file);
-            const dadosExtraidos = processarXML(conteudo);
             
-            // Validação: Se o XML não tiver dados de IR, avisa
-            if (dadosExtraidos.length === 0) {
-                throw new Error("Arquivo lido, mas sem dados de S-5002 (IRRF). Verifique se é o XML correto.");
-            }
-
+            // Chama o processador
+            const resultado = processarXMLcomFiltro(conteudo);
+            
             memoriaArquivos.push({
                 nomeArquivo: file.name,
-                dados: dadosExtraidos
+                tipo: resultado.tipo, 
+                dados: resultado.registros
             });
 
-            adicionarNaListaVisual(file.name, true);
+            adicionarNaListaVisual(file.name, true, resultado.tipo);
 
         } catch (erro) {
             console.error("Erro no arquivo " + file.name, erro);
-            // Mostra o motivo do erro na tela para ajudar você
             adicionarNaListaVisual(file.name, false, erro.message);
         }
     }
@@ -45,7 +40,6 @@ async function receberArquivos(event) {
     event.target.value = ''; 
 }
 
-// 2. Auxiliar para ler arquivo como texto
 function lerArquivoTexto(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -55,77 +49,156 @@ function lerArquivoTexto(file) {
     });
 }
 
-// 3. O "Cérebro" Atualizado (Mais robusto contra namespaces do eSocial)
-function processarXML(xmlTexto) {
+// 2. O Cérebro Ajustado para suas Tags (totApurMen / consolidApurMen)
+function processarXMLcomFiltro(xmlTexto) {
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlTexto, "text/xml");
 
-    // Verifica erros de parsing do navegador
     if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
-        throw new Error("O arquivo não é um XML válido ou está corrompido.");
+        throw new Error("Arquivo corrompido (XML inválido).");
     }
+
+    // --- IDENTIFICAÇÃO DO TIPO ---
+    const temS5002 = buscarTags(xmlDoc, "evtIrrfBenef").length > 0;
+    const temS1210 = buscarTags(xmlDoc, "evtPgtos").length > 0;
+
+    if (!temS5002 && !temS1210) {
+        throw new Error("Arquivo ignorado (Não é S-5002 nem S-1210).");
+    }
+
+    // --- EXTRAÇÃO DE DADOS ---
+    let registros = [];
+    let tipoDetectado = "";
     
-    // --- Nova Estratégia de Leitura (Ignora prefixos como 'esocial:') ---
-    
-    // Tenta pegar o CPF
-    let cpf = "";
-    const tagsCPF = encontrarTagsPorNome(xmlDoc, "cpfBenef");
+    // Tenta pegar CPF
+    let cpf = "---";
+    const tagsCPF = buscarTags(xmlDoc, "cpfBenef");
     if (tagsCPF.length > 0) cpf = tagsCPF[0].textContent;
 
-    let registros = [];
-
-    // Busca blocos 'infoIR' onde quer que estejam
-    const infoIRNodes = encontrarTagsPorNome(xmlDoc, "infoIR");
-    
-    infoIRNodes.forEach(nodeIR => {
-        // Busca Competência (perApur) DENTRO do bloco infoIR
-        const tagsPerApur = encontrarTagsPorNome(nodeIR, "perApur");
-        const perApur = tagsPerApur.length > 0 ? tagsPerApur[0].textContent : "Indefinido";
-
-        // Busca as bases de cálculo DENTRO deste infoIR
-        const basesNodes = encontrarTagsPorNome(nodeIR, "basesApur");
+    // >> MODO S-5002 (Baseado nas tags que você enviou)
+    if (temS5002) {
+        tipoDetectado = "S-5002 (IRRF)";
         
-        basesNodes.forEach(baseNode => {
-            const tagsVrBc = encontrarTagsPorNome(baseNode, "vrBcMensal");
-            const tagsVrIrrf = encontrarTagsPorNome(baseNode, "vrIrrfDesc");
+        // 1. Tenta achar a DATA (Competência)
+        const tagsPerApur = buscarTags(xmlDoc, "perApur");
+        const competenciaGeral = tagsPerApur.length > 0 ? tagsPerApur[0].textContent : "Indefinido";
 
-            const vrBc = tagsVrBc.length > 0 ? parseFloat(tagsVrBc[0].textContent) : 0;
-            const vrIrrf = tagsVrIrrf.length > 0 ? parseFloat(tagsVrIrrf[0].textContent) : 0;
+        // 2. Tenta achar o bloco consolidado (Sua tag: consolidApurMen)
+        let blocosValores = buscarTags(xmlDoc, "consolidApurMen");
+        
+        // Se não achar o consolidado, tenta o totalizador (Sua tag: totApurMen)
+        if (blocosValores.length === 0) {
+            blocosValores = buscarTags(xmlDoc, "totApurMen");
+        }
+
+        if (blocosValores.length > 0) {
+            blocosValores.forEach(node => {
+                // --- AQUI ESTÁ A MÁGICA DAS SUAS TAGS ---
+                
+                // Rendimento Tributável (Salário Base)
+                const vlrRendTrib = obterValor(node, "vlrRendTrib");
+                
+                // Imposto Retido (A tag do imposto costuma ser vlrCRMen ou vlrIRRF)
+                // No seu snippet tem vlrCRMen. Se for 0, é zero.
+                const vlrIRRF = obterValor(node, "vlrCRMen"); 
+
+                // INSS (Opcional, mas bom ter)
+                const vlrINSS = obterValor(node, "vlrPrevOficial");
+
+                // NOTA: Se quiser somar também o 13º (vlrRendTrib13), podemos somar aqui.
+                // Por enquanto vou pegar o rendimento mensal padrão.
+                
+                registros.push({
+                    competencia: competenciaGeral,
+                    base: vlrRendTrib,
+                    irrf: vlrIRRF,
+                    cpf: cpf
+                });
+            });
+        } else {
+            // Se chegou aqui, é S-5002 mas não achou as tags de totais. 
+            // Tenta o método antigo (basesApur) só por garantia.
+            const basesAntigas = buscarTags(xmlDoc, "basesApur");
+            basesAntigas.forEach(node => {
+                registros.push({
+                    competencia: competenciaGeral,
+                    base: obterValor(node, "vrBcMensal"),
+                    irrf: obterValor(node, "vrIrrfDesc"),
+                    cpf: cpf
+                });
+            });
+        }
+    }
+    
+    // >> MODO S-1210 (Pagamento - Mantido caso você use)
+    else if (temS1210) {
+        tipoDetectado = "S-1210 (Pagto)";
+        const tagsInfoPgto = buscarTags(xmlDoc, "infoPgto");
+        
+        tagsInfoPgto.forEach(node => {
+            const dtPgto = obterTexto(node, "dtPgto");
+            let competencia = dtPgto.substring(0, 7); 
+            let vrLiq = obterValor(node, "vrLiq");
+            let vrIrrf = obterValor(node, "vrIrrf"); 
 
             registros.push({
-                competencia: perApur,
-                base: vrBc,
+                competencia: competencia,
+                base: vrLiq, 
                 irrf: vrIrrf,
                 cpf: cpf
             });
         });
-    });
+    }
 
-    return registros;
+    if (registros.length === 0) {
+        throw new Error(`Sem valores financeiros (vlrRendTrib/consolidApurMen) encontrados.`);
+    }
+
+    return { tipo: tipoDetectado, registros: registros };
 }
 
-// --- Nova Função Auxiliar Poderosa ---
-// Encontra tags apenas pelo nome final, ignorando namespaces (esocial:, ns2:, etc)
-function encontrarTagsPorNome(elementoPai, nomeTagDesejada) {
-    // Se o elementoPai for o documento todo, usa getElementsByTagName("*")
-    // Se for um nó específico, também usa getElementsByTagName("*") nele
-    const todosElementos = elementoPai.getElementsByTagName("*");
-    const encontrados = [];
+// --- Funções Auxiliares (Blindadas contra prefixos) ---
 
-    for (let i = 0; i < todosElementos.length; i++) {
-        const el = todosElementos[i];
-        // Verifica se o 'localName' (nome sem prefixo) bate com o que queremos
-        if (el.localName === nomeTagDesejada || el.tagName === nomeTagDesejada) {
-            encontrados.push(el);
+function buscarTags(escopo, nomeTag) {
+    const resultado = [];
+    const todos = escopo.getElementsByTagName("*");
+    for (let i = 0; i < todos.length; i++) {
+        // Ignora maiúsculas/minúsculas e prefixos (esocial:)
+        if ((todos[i].localName.toLowerCase() === nomeTag.toLowerCase()) || 
+            (todos[i].tagName.toLowerCase() === nomeTag.toLowerCase())) {
+            resultado.push(todos[i]);
         }
     }
-    return encontrados;
+    return resultado;
 }
 
-// 4. Função para Consolidar e Exibir
+function obterTexto(noPai, nomeTag) {
+    const tags = buscarTags(noPai, nomeTag);
+    return tags.length > 0 ? tags[0].textContent : "";
+}
+
+function obterValor(noPai, nomeTag) {
+    const texto = obterTexto(noPai, nomeTag);
+    return texto ? parseFloat(texto) : 0;
+}
+
+// --- Renderização e Interface ---
+function adicionarNaListaVisual(nome, sucesso, msgExtra = "") {
+    const lista = document.getElementById("listaArquivos");
+    const li = document.createElement("li");
+    li.className = sucesso ? "ok" : "error";
+    
+    let htmlStatus = sucesso 
+        ? `<span style="background:#e8f5e9; color:#2e7d32; padding:2px 8px; border-radius:4px; font-size:0.8em; font-weight:bold;">${msgExtra}</span>`
+        : `<span style="color:#c62828; font-size:0.9em;">${msgExtra}</span>`;
+    
+    li.innerHTML = `<span>${nome}</span> ${htmlStatus}`;
+    lista.appendChild(li);
+}
+
 function calcularTudo() {
     if (memoriaArquivos.length === 0) {
-        alert("Nenhum arquivo carregado corretamente.");
+        alert("Nenhum arquivo válido carregado.");
         return;
     }
 
@@ -134,15 +207,11 @@ function calcularTudo() {
 
     memoriaArquivos.forEach(arquivo => {
         arquivo.dados.forEach(registro => {
-            if (registro.cpf) cpfFinal = registro.cpf;
+            if (registro.cpf && registro.cpf.length > 5) cpfFinal = registro.cpf;
             
-            const chave = registro.competencia; // Ex: 2025-10
-            
-            if (!consolidado[chave]) {
-                consolidado[chave] = { base: 0, irrf: 0 };
-            }
+            const chave = registro.competencia;
+            if (!consolidado[chave]) consolidado[chave] = { base: 0, irrf: 0 };
 
-            // Soma segura usando inteiros (evita erros de centavos do JS)
             consolidado[chave].base += Math.round(registro.base * 100);
             consolidado[chave].irrf += Math.round(registro.irrf * 100);
         });
@@ -151,7 +220,6 @@ function calcularTudo() {
     renderizarTabela(consolidado, cpfFinal);
 }
 
-// 5. Renderização na Tela
 function renderizarTabela(dados, cpf) {
     const tbody = document.querySelector("#tabelaResultados tbody");
     tbody.innerHTML = "";
@@ -182,36 +250,7 @@ function renderizarTabela(dados, cpf) {
     document.getElementById("output").style.display = "block";
 }
 
-// --- Utilitários ---
-
-function adicionarNaListaVisual(nome, sucesso, msgErro = "") {
-    const lista = document.getElementById("listaArquivos");
-    const li = document.createElement("li");
-    li.className = sucesso ? "ok" : "error";
-    
-    const textoStatus = sucesso ? '✔ Carregado' : `❌ Erro: ${msgErro}`;
-    
-    li.innerHTML = `<span>${nome}</span> <span>${textoStatus}</span>`;
-    lista.appendChild(li);
-}
-
-function atualizarContador() {
-    document.getElementById("contadorArquivos").textContent = memoriaArquivos.length;
-}
-
-function limparMemoria() {
-    memoriaArquivos = [];
-    document.getElementById("listaArquivos").innerHTML = "";
-    document.getElementById("output").style.display = "none";
-    document.getElementById("statusArea").style.display = "none";
-    atualizarContador();
-}
-
-function formatarMoeda(valorCentavos) {
-    return (valorCentavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function formatarCPF(cpf) {
-    if(!cpf || cpf.length < 11) return cpf;
-    return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-}
+function atualizarContador() { document.getElementById("contadorArquivos").textContent = memoriaArquivos.length; }
+function limparMemoria() { memoriaArquivos = []; document.getElementById("listaArquivos").innerHTML = ""; document.getElementById("output").style.display = "none"; document.getElementById("statusArea").style.display = "none"; atualizarContador(); }
+function formatarMoeda(v) { return (v/100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+function formatarCPF(v) { if(!v) return ""; return v.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4"); }
