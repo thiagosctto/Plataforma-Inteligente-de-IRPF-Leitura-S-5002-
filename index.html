@@ -3,67 +3,174 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auditor de IRRF - eSocial S-5002</title>
+    <title>Gerador de Informe de Rendimentos</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <div class="container">
+    <div class="no-print container">
         <header>
-            <h1>Auditoria de Informe de Rendimentos</h1>
-            <p>Processamento do evento S-5002 (Consolidado por Regime de Caixa)</p>
+            <h1>Auditoria & Gerador de Informe</h1>
+            <p>Importe os XMLs S-5002 para gerar o documento oficial.</p>
         </header>
 
+        <div class="card">
+            <h3>1. Dados da Fonte Pagadora (Empresa)</h3>
+            <div class="form-row">
+                <input type="text" id="empresaNome" placeholder="Nome da Empresa / Razão Social" class="input-field">
+                <input type="text" id="empresaCnpj" placeholder="CNPJ da Empresa" class="input-field">
+            </div>
+        </div>
+
         <div class="card upload-section">
+            <h3>2. Importação dos Arquivos</h3>
             <div class="upload-controls">
                 <input type="file" id="fileInput" multiple accept=".xml">
                 <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
                     📂 Carregar XMLs (S-5002)
                 </button>
                 <button class="btn btn-danger" onclick="limparMemoria()">
-                    🗑️ Limpar Tudo
+                    🗑️ Limpar
                 </button>
             </div>
-            <p class="nota-seguranca">
-                <small>🔒 Seus dados são processados localmente e não saem do seu computador.</small>
-            </p>
-        </div>
-
-        <div id="statusArea" class="card" style="display: none;">
-            <h3>Arquivos na Memória: <span id="contadorArquivos">0</span></h3>
-            <ul id="listaArquivos" class="file-list"></ul>
-            <button class="btn btn-success full-width" onclick="calcularTudo()">
-                📊 Gerar Relatório Consolidado
-            </button>
-        </div>
-
-        <div id="output" class="card resultado-section" style="display: none;">
-            <div class="cabecalho-resultado">
-                <h2>Demonstrativo Anual de Rendimentos</h2>
-                <p>Beneficiário: <strong id="cpfDisplay">---</strong></p>
-            </div>
-
-            <table id="tabelaResultados">
-                <thead>
-                    <tr>
-                        <th>Competência (Caixa)</th>
-                        <th class="text-right">Base de Cálculo</th>
-                        <th class="text-right">IRRF Retido</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    </tbody>
-                <tfoot>
-                    <tr class="total-row">
-                        <td>TOTAL ANUAL</td>
-                        <td class="text-right" id="totalBase">R$ 0,00</td>
-                        <td class="text-right" id="totalIRRF">R$ 0,00</td>
-                    </tr>
-                </tfoot>
-            </table>
             
-            <button class="btn btn-secondary" onclick="window.print()">🖨️ Imprimir Relatório</button>
+            <div id="statusArea" style="display: none; margin-top: 15px;">
+                <p><strong>Arquivos Processados:</strong> <span id="contadorArquivos">0</span></p>
+                <ul id="listaArquivos" class="file-list"></ul>
+                <button class="btn btn-success full-width" onclick="gerarDocumentoOficial()">
+                    📄 Gerar Comprovante Oficial
+                </button>
+            </div>
         </div>
+    </div>
+
+    <div id="documentoOficial" class="folha-oficial" style="display: none;">
+        
+        <div class="header-oficial">
+            <div class="brasao">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Coat_of_arms_of_Brazil.svg/1200px-Coat_of_arms_of_Brazil.svg.png" alt="Brasão" width="50">
+            </div>
+            <div class="titulo-header">
+                <h3>MINISTÉRIO DA FAZENDA</h3>
+                <h4>SECRETARIA ESPECIAL DA RECEITA FEDERAL DO BRASIL</h4>
+                <p>Imposto Sobre a Renda da Pessoa Física</p>
+                <p><strong>Exercicio de <span id="anoExercicio">2026</span></strong> &nbsp;&nbsp; Ano-Calendário <span id="anoCalendario">2025</span></p>
+            </div>
+            <div class="titulo-lateral">
+                <h2>COMPROVANTE DE RENDIMENTOS PAGOS E DE<br>RETENÇÃO DE IMPOSTO DE RENDA NA FONTE</h2>
+            </div>
+        </div>
+
+        <p class="aviso-legal">Verifique as condições e o prazo para a apresentação da Declaração do Imposto sobre a Renda da Pessoa Física para este ano-calendário no sítio da RFB na Internet.</p>
+
+        <div class="bloco">
+            <div class="titulo-bloco">1 - FONTE PAGADORA PESSOA JURÍDICA OU PESSOA FÍSICA</div>
+            <div class="linha-dados">
+                <div class="col-30">
+                    <label>CNPJ/CPF</label>
+                    <span id="docCNPJ"></span>
+                </div>
+                <div class="col-70">
+                    <label>NOME EMPRESARIAL / NOME COMPLETO</label>
+                    <span id="docEmpresa"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="bloco">
+            <div class="titulo-bloco">2 - PESSOA FÍSICA BENEFICIÁRIA DOS RENDIMENTOS</div>
+            <div class="linha-dados">
+                <div class="col-30">
+                    <label>CPF</label>
+                    <span id="docCPF"></span>
+                </div>
+                <div class="col-70">
+                    <label>NOME COMPLETO</label>
+                    <span id="docNome"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="bloco">
+            <div class="titulo-bloco">3 - RENDIMENTOS TRIBUTÁVEIS, DEDUÇÕES E IMPOSTO SOBRE A RENDA RETIDO NA FONTE</div>
+            <table class="tabela-oficial">
+                <tr>
+                    <td>01 - TOTAL DOS RENDIMENTOS (INCLUSIVE FÉRIAS)</td>
+                    <td class="valor" id="linha3_01">0,00</td>
+                </tr>
+                <tr>
+                    <td>02 - CONTRIBUIÇÃO PREVIDENCIÁRIA OFICIAL</td>
+                    <td class="valor" id="linha3_02">0,00</td>
+                </tr>
+                <tr>
+                    <td>03 - CONTRIBUIÇÃO A ENTIDADES DE PREVIDÊNCIA COMPLEMENTAR...</td>
+                    <td class="valor">0,00</td>
+                </tr>
+                <tr>
+                    <td>04 - PENSÃO ALIMENTÍCIA</td>
+                    <td class="valor">0,00</td>
+                </tr>
+                <tr>
+                    <td>05 - IMPOSTO SOBRE A RENDA RETIDO NA FONTE</td>
+                    <td class="valor" id="linha3_05">0,00</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="bloco">
+            <div class="titulo-bloco">4 - RENDIMENTOS ISENTOS E NÃO TRIBUTÁVEIS</div>
+            <table class="tabela-oficial">
+                <tr>
+                    <td>01 - PARCELA ISENTA DOS PROVENTOS DE APOSENTADORIA...</td>
+                    <td class="valor">0,00</td>
+                </tr>
+                <tr>
+                    <td>03 - PENSÃO E PROVENTOS DE APOSENTADORIA OU REFORMA POR MOLÉSTIA GRAVE...</td>
+                    <td class="valor">0,00</td>
+                </tr>
+                <tr>
+                    <td>07 - OUTROS (DIÁRIAS, INDENIZAÇÕES, ABONO PECUNIÁRIO, ETC)</td>
+                    <td class="valor">0,00</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="bloco">
+            <div class="titulo-bloco">5 - RENDIMENTOS SUJEITOS À TRIBUTAÇÃO EXCLUSIVA (RENDIMENTO LÍQUIDO)</div>
+            <table class="tabela-oficial">
+                <tr>
+                    <td>01 - DÉCIMO TERCEIRO SALÁRIO</td>
+                    <td class="valor" id="linha5_01">0,00</td>
+                </tr>
+                <tr>
+                    <td>02 - IMPOSTO SOBRE A RENDA RETIDO NA FONTE SOBRE 13º SALÁRIO</td>
+                    <td class="valor" id="linha5_02">0,00</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="bloco">
+            <div class="titulo-bloco">7 - INFORMAÇÕES COMPLEMENTARES</div>
+            <div class="area-texto" style="height: 80px;">
+                <p>Documento gerado eletronicamente via Processamento de XML S-5002 (eSocial).</p>
+            </div>
+        </div>
+        
+        <div class="footer-oficial">
+            <div class="data-local">
+                Data: <span id="dataAtual"></span>
+            </div>
+            <div class="assinatura">
+                Assinatura do Responsável
+            </div>
+        </div>
+
+    </div>
+
+    <div id="btnImprimir" class="no-print" style="display:none; position: fixed; bottom: 20px; right: 20px;">
+        <button class="btn btn-primary" style="padding: 15px 30px; font-size: 18px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);" onclick="window.print()">
+            🖨️ Imprimir / Salvar PDF
+        </button>
     </div>
 
     <script src="script.js"></script>
