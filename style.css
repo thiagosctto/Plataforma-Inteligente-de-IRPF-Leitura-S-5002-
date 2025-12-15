@@ -1,0 +1,92 @@
+:root {
+    --primary: #2c3e50;
+    --accent: #3498db;
+    --success: #27ae60;
+    --danger: #c0392b;
+    --bg: #f4f4f9;
+    --card-bg: #ffffff;
+}
+
+body {
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg);
+    color: #333;
+    margin: 0;
+    padding: 20px;
+}
+
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+h1 { color: var(--primary); margin-bottom: 5px; }
+p { color: #666; }
+
+.card {
+    background: var(--card-bg);
+    padding: 25px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-weight: 600;
+}
+
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover { background: #2980b9; }
+
+.btn-success { background: var(--success); color: white; }
+.btn-success:hover { background: #2ecc71; }
+
+.btn-danger { background: var(--danger); color: white; }
+.btn-secondary { background: #95a5a6; color: white; margin-top: 15px; }
+
+.full-width { width: 100%; margin-top: 15px; }
+
+#fileInput { display: none; }
+
+.file-list {
+    list-style: none;
+    padding: 0;
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #eee;
+    margin-top: 10px;
+}
+
+.file-list li {
+    padding: 8px;
+    border-bottom: 1px solid #eee;
+    font-size: 0.9em;
+    display: flex;
+    justify-content: space-between;
+}
+
+.file-list li.ok { color: var(--success); }
+.file-list li.error { color: var(--danger); }
+
+table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+th, td { padding: 12px; border-bottom: 1px solid #ddd; }
+th { background-color: #f8f9fa; color: var(--primary); text-align: left; }
+.text-right { text-align: right; }
+.total-row { background-color: #e8f6f3; font-weight: bold; font-size: 1.1em; }
+
+@media print {
+    .upload-section, .btn, #statusArea { display: none; }
+    body { background: white; }
+    .card { box-shadow: none; border: none; }
+}
